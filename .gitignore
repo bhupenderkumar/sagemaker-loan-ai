@@ -1,0 +1,30 @@
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# Data artifacts
+data/train.csv
+data/test.csv
+data/encoding_maps.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# AWS
+.aws/
+
+# Temp
+/tmp/
+*.tar.gz
