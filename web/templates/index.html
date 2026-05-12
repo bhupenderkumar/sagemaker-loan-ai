@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loan Prediction AI — SageMaker Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+      min-height: 100vh;
+      color: #e0e0e0;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* Header */
+    header {
+      text-align: center;
+      padding: 40px 0 30px;
+    }
+    header h1 {
+      font-size: 2.5rem;
+      background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    header p {
+      color: #8892b0;
+      font-size: 1.1rem;
+    }
+
+    /* Architecture Banner */
+    .arch-banner {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 24px 32px;
+      margin-bottom: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .arch-step {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .arch-step .icon {
+      width: 40px; height: 40px;
+      background: rgba(0,210,255,0.15);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+    }
+    .arch-step span { font-size: 0.85rem; color: #8892b0; }
+    .arch-arrow { color: #3a7bd5; font-size: 1.5rem; }
+
+    /* Main Layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+    }
+    @media (max-width: 768px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* Card */
+    .card {
+      background: rgba(255,255,255,0.06);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 20px;
+      padding: 32px;
+    }
+    .card h2 {
+      font-size: 1.3rem;
+      margin-bottom: 24px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .card h2 .badge {
+      font-size: 0.7rem;
+      background: rgba(0,210,255,0.2);
+      color: #00d2ff;
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+
+    /* Form */
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+    }
+    .form-group label {
+      font-size: 0.8rem;
+      color: #8892b0;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .form-group input, .form-group select {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: #fff;
+      font-size: 0.95rem;
+      transition: border-color 0.3s;
+    }
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
+      border-color: #3a7bd5;
+    }
+    .form-group select option { background: #1a1a2e; color: #fff; }
+    .form-group.full { grid-column: 1 / -1; }
+
+    /* Slider */
+    .slider-group {
+      grid-column: 1 / -1;
+    }
+    .slider-group .slider-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .slider-group input[type="range"] {
+      width: 100%;
+      -webkit-appearance: none;
+      height: 6px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 5px;
+      outline: none;
+    }
+    .slider-group input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: #3a7bd5;
+      cursor: pointer;
+    }
+
+    /* Toggle */
+    .toggle-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .toggle {
+      position: relative;
+      width: 48px; height: 26px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 13px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .toggle.active { background: #3a7bd5; }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 22px; height: 22px;
+      background: #fff;
+      border-radius: 50%;
+      top: 2px; left: 2px;
+      transition: transform 0.3s;
+    }
+    .toggle.active::after { transform: translateX(22px); }
+
+    /* Button */
+    .predict-btn {
+      width: 100%;
+      padding: 16px;
+      margin-top: 24px;
+      background: linear-gradient(90deg, #00d2ff, #3a7bd5);
+      border: none;
+      border-radius: 12px;
+      color: #fff;
+      font-size: 1.1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .predict-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(0,210,255,0.3);
+    }
+    .predict-btn:active { transform: translateY(0); }
+    .predict-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Result Panel */
+    .result-panel { display: none; }
+    .result-panel.show { display: block; }
+
+    .decision-box {
+      text-align: center;
+      padding: 40px 20px;
+      border-radius: 16px;
+      margin-bottom: 24px;
+    }
+    .decision-box.approved {
+      background: linear-gradient(135deg, rgba(0,200,83,0.15), rgba(0,200,83,0.05));
+      border: 2px solid rgba(0,200,83,0.3);
+    }
+    .decision-box.rejected {
+      background: linear-gradient(135deg, rgba(255,69,58,0.15), rgba(255,69,58,0.05));
+      border: 2px solid rgba(255,69,58,0.3);
+    }
+    .decision-icon {
+      font-size: 4rem;
+      margin-bottom: 12px;
+    }
+    .decision-text {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .decision-box.approved .decision-text { color: #00c853; }
+    .decision-box.rejected .decision-text { color: #ff453a; }
+
+    /* Probability Gauge */
+    .gauge-container {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .gauge {
+      width: 200px; height: 100px;
+      margin: 0 auto;
+      position: relative;
+      overflow: hidden;
+    }
+    .gauge-bg, .gauge-fill {
+      width: 200px; height: 200px;
+      border-radius: 50%;
+      border: 20px solid;
+      position: absolute;
+      top: 0;
+    }
+    .gauge-bg {
+      border-color: rgba(255,255,255,0.1);
+      clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
+    }
+    .gauge-fill {
+      border-color: #3a7bd5;
+      clip-path: polygon(0 0, 100% 0, 100% 50%, 0 50%);
+      transform: rotate(0deg);
+      transition: transform 1s ease-out;
+      transform-origin: center center;
+    }
+    .gauge-value {
+      position: absolute;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 2rem;
+      font-weight: 700;
+    }
+    .gauge-label {
+      color: #8892b0;
+      font-size: 0.85rem;
+      margin-top: 8px;
+    }
+
+    /* Details Grid */
+    .details-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .detail-item {
+      background: rgba(255,255,255,0.05);
+      border-radius: 10px;
+      padding: 14px;
+    }
+    .detail-item .label {
+      font-size: 0.75rem;
+      color: #8892b0;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .detail-item .value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    .risk-badge {
+      display: inline-block;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .risk-badge.low { background: rgba(0,200,83,0.2); color: #00c853; }
+    .risk-badge.medium { background: rgba(255,183,0,0.2); color: #ffb700; }
+    .risk-badge.high { background: rgba(255,69,58,0.2); color: #ff453a; }
+
+    /* Placeholder */
+    .placeholder {
+      text-align: center;
+      padding: 80px 20px;
+      color: #8892b0;
+    }
+    .placeholder .icon { font-size: 4rem; margin-bottom: 16px; }
+    .placeholder p { font-size: 1rem; }
+
+    /* Loading */
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 60px;
+    }
+    .loading.show { display: block; }
+    .spinner {
+      width: 50px; height: 50px;
+      border: 4px solid rgba(255,255,255,0.1);
+      border-top-color: #3a7bd5;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 40px 0 20px;
+      color: #8892b0;
+      font-size: 0.85rem;
+    }
+    footer a { color: #3a7bd5; text-decoration: none; }
+
+    /* Preset buttons */
+    .presets {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .preset-btn {
+      flex: 1;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      color: #8892b0;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.3s;
+      text-align: center;
+    }
+    .preset-btn:hover {
+      border-color: #3a7bd5;
+      color: #fff;
+      background: rgba(58,123,213,0.15);
+    }
+    .preset-btn .emoji { font-size: 1.2rem; display: block; margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>🏦 Loan Prediction AI</h1>
+    <p>Powered by Amazon SageMaker • XGBoost ML Model • Real-time Inference</p>
+  </header>
+
+  <!-- Architecture Banner -->
+  <div class="arch-banner">
+    <div class="arch-step">
+      <div class="icon">📋</div>
+      <span>Application<br>Form</span>
+    </div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-step">
+      <div class="icon">🔗</div>
+      <span>Flask<br>API</span>
+    </div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-step">
+      <div class="icon">☁️</div>
+      <span>SageMaker<br>Endpoint</span>
+    </div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-step">
+      <div class="icon">🤖</div>
+      <span>XGBoost<br>Model</span>
+    </div>
+    <span class="arch-arrow">→</span>
+    <div class="arch-step">
+      <div class="icon">✅</div>
+      <span>Prediction<br>Result</span>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <!-- Left: Form -->
+    <div class="card">
+      <h2>📝 Loan Application <span class="badge">LIVE ENDPOINT</span></h2>
+
+      <div class="presets">
+        <button class="preset-btn" onclick="fillPreset('good')">
+          <span class="emoji">👤</span>
+          Good Applicant
+        </button>
+        <button class="preset-btn" onclick="fillPreset('risky')">
+          <span class="emoji">⚠️</span>
+          Risky Applicant
+        </button>
+        <button class="preset-btn" onclick="fillPreset('edge')">
+          <span class="emoji">🔄</span>
+          Edge Case
+        </button>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Age</label>
+          <input type="number" id="age" value="35" min="18" max="70">
+        </div>
+        <div class="form-group">
+          <label>Annual Income (₹)</label>
+          <input type="number" id="income" value="85000" min="0">
+        </div>
+        <div class="form-group">
+          <label>Loan Amount (₹)</label>
+          <input type="number" id="loan_amount" value="200000" min="0">
+        </div>
+        <div class="form-group">
+          <label>Credit Score</label>
+          <input type="number" id="credit_score" value="720" min="300" max="850">
+        </div>
+        <div class="form-group">
+          <label>Employment Years</label>
+          <input type="number" id="employment_years" value="10" min="0" max="50">
+        </div>
+        <div class="form-group">
+          <label>Property Value (₹)</label>
+          <input type="number" id="property_value" value="350000" min="0">
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-header">
+            <label style="font-size:0.8rem;color:#8892b0;text-transform:uppercase;letter-spacing:0.5px;">Debt-to-Income Ratio</label>
+            <span id="dti-value" style="color:#3a7bd5;font-weight:600;">25%</span>
+          </div>
+          <input type="range" id="debt_to_income" min="0" max="100" value="25"
+                 oninput="document.getElementById('dti-value').textContent = this.value + '%'">
+        </div>
+
+        <div class="form-group">
+          <label>Area Type</label>
+          <select id="area_type">
+            <option value="urban">🏙️ Urban</option>
+            <option value="suburban">🏘️ Suburban</option>
+            <option value="rural">🌾 Rural</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Education</label>
+          <select id="education">
+            <option value="postgraduate">🎓 Postgraduate</option>
+            <option value="graduate" selected>📚 Graduate</option>
+            <option value="high_school">🏫 High School</option>
+          </select>
+        </div>
+
+        <div class="form-group full">
+          <label>Self Employed</label>
+          <div class="toggle-group">
+            <div class="toggle" id="self_employed_toggle" onclick="toggleSelfEmployed()"></div>
+            <span id="self_employed_label" style="color:#8892b0;">No — Salaried Employee</span>
+          </div>
+        </div>
+      </div>
+
+      <button class="predict-btn" id="predictBtn" onclick="submitPrediction()">
+        🚀 Get AI Prediction
+      </button>
+    </div>
+
+    <!-- Right: Result -->
+    <div class="card">
+      <h2>📊 Prediction Result <span class="badge">REAL-TIME</span></h2>
+
+      <div class="placeholder" id="placeholder">
+        <div class="icon">🤖</div>
+        <p>Fill the application form and click<br><strong>"Get AI Prediction"</strong> to see results</p>
+        <p style="margin-top:16px;font-size:0.85rem;color:#5a6380;">
+          Model: XGBoost • Region: ap-south-1<br>
+          Endpoint: loan-approval-endpoint
+        </p>
+      </div>
+
+      <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Querying SageMaker endpoint...</p>
+        <p style="font-size:0.8rem;color:#5a6380;margin-top:8px;">Inference via HTTPS → ml.m5.large</p>
+      </div>
+
+      <div class="result-panel" id="resultPanel">
+        <div class="decision-box" id="decisionBox">
+          <div class="decision-icon" id="decisionIcon"></div>
+          <div class="decision-text" id="decisionText"></div>
+          <span class="risk-badge" id="riskBadge"></span>
+        </div>
+
+        <div class="gauge-container">
+          <div class="gauge">
+            <div class="gauge-bg"></div>
+            <div class="gauge-fill" id="gaugeFill"></div>
+            <div class="gauge-value" id="gaugeValue">0%</div>
+          </div>
+          <div class="gauge-label">Approval Probability</div>
+        </div>
+
+        <div class="details-grid" id="detailsGrid"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Built with ❤️ using <a href="#">Amazon SageMaker</a> • XGBoost v1.7 • Flask •
+      <a href="#">GitHub: sagemaker-loan-ai</a></p>
+    <p style="margin-top:8px;">⚠️ Demo model trained on 50 sample rows — not for production use</p>
+  </footer>
+</div>
+
+<script>
+  let selfEmployed = 0;
+
+  function toggleSelfEmployed() {
+    const toggle = document.getElementById('self_employed_toggle');
+    const label = document.getElementById('self_employed_label');
+    selfEmployed = selfEmployed ? 0 : 1;
+    toggle.classList.toggle('active');
+    label.textContent = selfEmployed ? 'Yes — Self Employed' : 'No — Salaried Employee';
+  }
+
+  const presets = {
+    good: { age:35, income:85000, loan_amount:200000, credit_score:720, employment_years:10,
+            debt_to_income:25, area_type:'urban', education:'graduate', self_employed:0, property_value:350000 },
+    risky: { age:22, income:18000, loan_amount:150000, credit_score:520, employment_years:0,
+             debt_to_income:70, area_type:'rural', education:'high_school', self_employed:1, property_value:80000 },
+    edge: { age:30, income:45000, loan_amount:180000, credit_score:650, employment_years:4,
+            debt_to_income:45, area_type:'suburban', education:'graduate', self_employed:0, property_value:200000 },
+  };
+
+  function fillPreset(type) {
+    const p = presets[type];
+    document.getElementById('age').value = p.age;
+    document.getElementById('income').value = p.income;
+    document.getElementById('loan_amount').value = p.loan_amount;
+    document.getElementById('credit_score').value = p.credit_score;
+    document.getElementById('employment_years').value = p.employment_years;
+    document.getElementById('debt_to_income').value = p.debt_to_income;
+    document.getElementById('dti-value').textContent = p.debt_to_income + '%';
+    document.getElementById('area_type').value = p.area_type;
+    document.getElementById('education').value = p.education;
+    document.getElementById('property_value').value = p.property_value;
+
+    if (p.self_employed !== selfEmployed) toggleSelfEmployed();
+  }
+
+  async function submitPrediction() {
+    const btn = document.getElementById('predictBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Processing...';
+
+    document.getElementById('placeholder').style.display = 'none';
+    document.getElementById('resultPanel').classList.remove('show');
+    document.getElementById('loading').classList.add('show');
+
+    const payload = {
+      age: document.getElementById('age').value,
+      income: document.getElementById('income').value,
+      loan_amount: document.getElementById('loan_amount').value,
+      credit_score: document.getElementById('credit_score').value,
+      employment_years: document.getElementById('employment_years').value,
+      debt_to_income: document.getElementById('debt_to_income').value / 100,
+      area_type: document.getElementById('area_type').value,
+      education: document.getElementById('education').value,
+      self_employed: selfEmployed,
+      property_value: document.getElementById('property_value').value,
+    };
+
+    try {
+      const res = await fetch('/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (data.error) {
+        alert('Error: ' + data.error);
+        return;
+      }
+
+      showResult(data);
+    } catch (err) {
+      alert('Failed to reach server: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🚀 Get AI Prediction';
+    }
+  }
+
+  function showResult(data) {
+    document.getElementById('loading').classList.remove('show');
+    const panel = document.getElementById('resultPanel');
+    panel.classList.add('show');
+
+    // Decision box
+    const box = document.getElementById('decisionBox');
+    box.className = 'decision-box ' + (data.approved ? 'approved' : 'rejected');
+    document.getElementById('decisionIcon').textContent = data.approved ? '✅' : '❌';
+    document.getElementById('decisionText').textContent = data.decision;
+
+    // Risk badge
+    const badge = document.getElementById('riskBadge');
+    badge.textContent = data.risk_level + ' Risk';
+    badge.className = 'risk-badge ' + data.risk_level.toLowerCase();
+
+    // Gauge
+    const deg = (data.probability / 100) * 180;
+    document.getElementById('gaugeFill').style.transform = `rotate(${deg - 180}deg)`;
+    document.getElementById('gaugeValue').textContent = data.probability + '%';
+
+    // Details
+    const grid = document.getElementById('detailsGrid');
+    const d = data.details;
+    grid.innerHTML = `
+      <div class="detail-item"><div class="label">Age</div><div class="value">${d.age} years</div></div>
+      <div class="detail-item"><div class="label">Income</div><div class="value">₹${Number(d.income).toLocaleString()}</div></div>
+      <div class="detail-item"><div class="label">Loan Amount</div><div class="value">₹${Number(d.loan_amount).toLocaleString()}</div></div>
+      <div class="detail-item"><div class="label">Credit Score</div><div class="value">${d.credit_score}</div></div>
+      <div class="detail-item"><div class="label">Employment</div><div class="value">${d.employment_years} years</div></div>
+      <div class="detail-item"><div class="label">DTI Ratio</div><div class="value">${d.debt_to_income}%</div></div>
+      <div class="detail-item"><div class="label">Area</div><div class="value">${d.area_type}</div></div>
+      <div class="detail-item"><div class="label">Education</div><div class="value">${d.education}</div></div>
+      <div class="detail-item"><div class="label">Self Employed</div><div class="value">${d.self_employed ? 'Yes' : 'No'}</div></div>
+      <div class="detail-item"><div class="label">Property Value</div><div class="value">₹${Number(d.property_value).toLocaleString()}</div></div>
+    `;
+  }
+</script>
+
+</body>
+</html>
