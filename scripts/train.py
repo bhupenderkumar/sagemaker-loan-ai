@@ -1,5 +1,5 @@
 """
-Step 2: Train — Launch a SageMaker XGBoost Training Job.
+Step 2: Train — Launch a SageMaker XGBoost Training Job using boto3.
 
 REFRESHER — How SageMaker Training Works:
   1. You specify an ALGORITHM CONTAINER IMAGE (AWS provides built-in ones
@@ -18,77 +18,94 @@ HYPERPARAMETERS explained:
   - eval_metric: auc = Area Under ROC Curve (how well it separates 0s from 1s).
 """
 import time
-import sagemaker
-from sagemaker import image_uris
-from sagemaker.inputs import TrainingInput
 from config import (
     get_session, ensure_role, REGION, BUCKET_NAME, S3_PREFIX,
     S3_OUTPUT_PATH, TRAINING_JOB_PREFIX, INSTANCE_TYPE_TRAIN,
 )
 
+# XGBoost container image for ap-south-1 (v1.7-1)
+XGBOOST_IMAGE = f"720646828776.dkr.ecr.{REGION}.amazonaws.com/sagemaker-xgboost:1.7-1"
+
 
 def train():
     session = get_session()
     role_arn = ensure_role(session)
+    sm = session.client("sagemaker")
 
-    sm_session = sagemaker.Session(boto_session=session)
+    job_name = f"{TRAINING_JOB_PREFIX}-{int(time.time())}"
+    print(f"XGBoost container: {XGBOOST_IMAGE}")
+    print(f"Starting training job: {job_name}")
 
-    # ── Get the XGBoost container image URI ───────────────────
-    # AWS maintains pre-built containers for popular algorithms
-    container = image_uris.retrieve("xgboost", REGION, version="1.7-1")
-    print(f"XGBoost container: {container}")
-
-    # ── Create the Estimator ──────────────────────────────────
-    # An Estimator = wrapper that defines: container + instance + hyperparams
-    xgb = sagemaker.estimator.Estimator(
-        image_uri=container,
-        role=role_arn,
-        instance_count=1,
-        instance_type=INSTANCE_TYPE_TRAIN,
-        output_path=S3_OUTPUT_PATH,
-        sagemaker_session=sm_session,
-        base_job_name=TRAINING_JOB_PREFIX,
+    sm.create_training_job(
+        TrainingJobName=job_name,
+        AlgorithmSpecification={
+            "TrainingImage": XGBOOST_IMAGE,
+            "TrainingInputMode": "File",
+        },
+        RoleArn=role_arn,
+        InputDataConfig=[
+            {
+                "ChannelName": "train",
+                "DataSource": {
+                    "S3DataSource": {
+                        "S3DataType": "S3Prefix",
+                        "S3Uri": f"s3://{BUCKET_NAME}/{S3_PREFIX}/train/",
+                        "S3DataDistributionType": "FullyReplicated",
+                    }
+                },
+                "ContentType": "text/csv",
+            },
+            {
+                "ChannelName": "validation",
+                "DataSource": {
+                    "S3DataSource": {
+                        "S3DataType": "S3Prefix",
+                        "S3Uri": f"s3://{BUCKET_NAME}/{S3_PREFIX}/test/",
+                        "S3DataDistributionType": "FullyReplicated",
+                    }
+                },
+                "ContentType": "text/csv",
+            },
+        ],
+        OutputDataConfig={"S3OutputPath": S3_OUTPUT_PATH},
+        ResourceConfig={
+            "InstanceType": INSTANCE_TYPE_TRAIN,
+            "InstanceCount": 1,
+            "VolumeSizeInGB": 5,
+        },
+        StoppingCondition={"MaxRuntimeInSeconds": 600},
+        HyperParameters={
+            "max_depth": "5",
+            "eta": "0.2",
+            "gamma": "4",
+            "min_child_weight": "6",
+            "subsample": "0.8",
+            "colsample_bytree": "0.8",
+            "num_round": "100",
+            "objective": "binary:logistic",
+            "eval_metric": "auc",
+        },
     )
 
-    # ── Set hyperparameters ───────────────────────────────────
-    xgb.set_hyperparameters(
-        max_depth=5,           # tree depth
-        eta=0.2,               # learning rate
-        gamma=4,               # min loss reduction to split
-        min_child_weight=6,    # min samples in leaf
-        subsample=0.8,         # % of rows per tree
-        colsample_bytree=0.8,  # % of features per tree
-        num_round=100,         # number of boosting rounds
-        objective="binary:logistic",
-        eval_metric="auc",
-    )
-
-    # ── Point to S3 data ──────────────────────────────────────
-    train_input = TrainingInput(
-        s3_data=f"s3://{BUCKET_NAME}/{S3_PREFIX}/train/",
-        content_type="text/csv",
-    )
-    test_input = TrainingInput(
-        s3_data=f"s3://{BUCKET_NAME}/{S3_PREFIX}/test/",
-        content_type="text/csv",
-    )
-
-    # ── Launch Training ───────────────────────────────────────
-    print("Starting training job...")
-    xgb.fit({"train": train_input, "validation": test_input})
-
-    # The job name is auto-generated
-    job_name = xgb.latest_training_job.name
-    print(f"\n✓ Training complete!")
-    print(f"  Job name:     {job_name}")
-    print(f"  Model artifact: {xgb.model_data}")
-    print(f"\nNext step: python deploy.py")
-
-    # Save job name for deploy script
-    with open("/tmp/loan_training_job.txt", "w") as f:
-        f.write(job_name)
-
-    return xgb
+    # Wait for job to complete
+    print("Training in progress...")
+    while True:
+        resp = sm.describe_training_job(TrainingJobName=job_name)
+        status = resp["TrainingJobStatus"]
+        if status == "Completed":
+            model_artifact = resp["ModelArtifacts"]["S3ModelArtifacts"]
+            print(f"\n✓ Training complete!")
+            print(f"  Job name:       {job_name}")
+            print(f"  Model artifact: {model_artifact}")
+            print(f"\nNext step: python deploy.py")
+            break
+        elif status == "Failed":
+            reason = resp.get("FailureReason", "Unknown")
+            print(f"\n✗ Training FAILED: {reason}")
+            break
+        else:
+            print(f"  Status: {status}...")
+            time.sleep(30)
 
 
 if __name__ == "__main__":

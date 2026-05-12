@@ -20,7 +20,7 @@ TRAINING_JOB_PREFIX = "loan-xgboost"
 MODEL_NAME = "loan-approval-model"
 ENDPOINT_CONFIG_NAME = "loan-approval-epc"
 ENDPOINT_NAME = "loan-approval-endpoint"
-INSTANCE_TYPE_TRAIN = "ml.m5.large"
+INSTANCE_TYPE_TRAIN = "ml.m5.xlarge"
 INSTANCE_TYPE_DEPLOY = "ml.m5.large"
 
 # ── IAM Role ──────────────────────────────────────────────────

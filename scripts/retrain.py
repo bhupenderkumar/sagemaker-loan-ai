@@ -15,14 +15,13 @@ import argparse
 import os
 import time
 import pandas as pd
-import sagemaker
-from sagemaker import image_uris
-from sagemaker.inputs import TrainingInput
 from config import (
     get_session, ensure_role, ensure_bucket, REGION, BUCKET_NAME, S3_PREFIX,
     S3_OUTPUT_PATH, TRAINING_JOB_PREFIX, MODEL_NAME, ENDPOINT_CONFIG_NAME,
     ENDPOINT_NAME, INSTANCE_TYPE_TRAIN, INSTANCE_TYPE_DEPLOY,
 )
+
+XGBOOST_IMAGE = f"720646828776.dkr.ecr.{REGION}.amazonaws.com/sagemaker-xgboost:1.7-1"
 
 AREA_MAP = {"rural": 0, "suburban": 1, "urban": 2}
 EDU_MAP = {"high_school": 0, "graduate": 1, "postgraduate": 2}
@@ -60,49 +59,88 @@ def upload_new_data(session, csv_path):
 def retrain(data_path=None):
     session = get_session()
     role_arn = ensure_role(session)
-    sm_session = sagemaker.Session(boto_session=session)
-    sm_client = session.client("sagemaker")
+    sm = session.client("sagemaker")
 
     if data_path:
         ensure_bucket(session)
         upload_new_data(session, data_path)
 
-    container = image_uris.retrieve("xgboost", REGION, version="1.7-1")
+    container = XGBOOST_IMAGE
+    job_name = f"{TRAINING_JOB_PREFIX}-retrain-{int(time.time())}"
 
     # ── New Training Job ──────────────────────────────────────
-    xgb = sagemaker.estimator.Estimator(
-        image_uri=container,
-        role=role_arn,
-        instance_count=1,
-        instance_type=INSTANCE_TYPE_TRAIN,
-        output_path=S3_OUTPUT_PATH,
-        sagemaker_session=sm_session,
-        base_job_name=f"{TRAINING_JOB_PREFIX}-retrain",
-    )
-    xgb.set_hyperparameters(
-        max_depth=5, eta=0.2, gamma=4, min_child_weight=6,
-        subsample=0.8, colsample_bytree=0.8, num_round=100,
-        objective="binary:logistic", eval_metric="auc",
+    sm.create_training_job(
+        TrainingJobName=job_name,
+        AlgorithmSpecification={
+            "TrainingImage": container,
+            "TrainingInputMode": "File",
+        },
+        RoleArn=role_arn,
+        InputDataConfig=[
+            {
+                "ChannelName": "train",
+                "DataSource": {
+                    "S3DataSource": {
+                        "S3DataType": "S3Prefix",
+                        "S3Uri": f"s3://{BUCKET_NAME}/{S3_PREFIX}/train/",
+                        "S3DataDistributionType": "FullyReplicated",
+                    }
+                },
+                "ContentType": "text/csv",
+            },
+            {
+                "ChannelName": "validation",
+                "DataSource": {
+                    "S3DataSource": {
+                        "S3DataType": "S3Prefix",
+                        "S3Uri": f"s3://{BUCKET_NAME}/{S3_PREFIX}/test/",
+                        "S3DataDistributionType": "FullyReplicated",
+                    }
+                },
+                "ContentType": "text/csv",
+            },
+        ],
+        OutputDataConfig={"S3OutputPath": S3_OUTPUT_PATH},
+        ResourceConfig={
+            "InstanceType": INSTANCE_TYPE_TRAIN,
+            "InstanceCount": 1,
+            "VolumeSizeInGB": 5,
+        },
+        StoppingCondition={"MaxRuntimeInSeconds": 600},
+        HyperParameters={
+            "max_depth": "5", "eta": "0.2", "gamma": "4",
+            "min_child_weight": "6", "subsample": "0.8",
+            "colsample_bytree": "0.8", "num_round": "100",
+            "objective": "binary:logistic", "eval_metric": "auc",
+        },
     )
 
-    train_input = TrainingInput(s3_data=f"s3://{BUCKET_NAME}/{S3_PREFIX}/train/", content_type="text/csv")
-    test_input = TrainingInput(s3_data=f"s3://{BUCKET_NAME}/{S3_PREFIX}/test/", content_type="text/csv")
-
-    print("Starting retraining job...")
-    xgb.fit({"train": train_input, "validation": test_input})
-    print(f"✓ Retrained: {xgb.latest_training_job.name}")
+    print(f"Retraining in progress: {job_name}...")
+    while True:
+        resp = sm.describe_training_job(TrainingJobName=job_name)
+        status = resp["TrainingJobStatus"]
+        if status == "Completed":
+            model_data = resp["ModelArtifacts"]["S3ModelArtifacts"]
+            print(f"✓ Retrained: {job_name}")
+            break
+        elif status == "Failed":
+            print(f"✗ Retrain FAILED: {resp.get('FailureReason', 'Unknown')}")
+            return
+        else:
+            print(f"  Status: {status}...")
+            time.sleep(30)
 
     # ── Update Endpoint ───────────────────────────────────────
     new_model_name = f"{MODEL_NAME}-{int(time.time())}"
     new_epc_name = f"{ENDPOINT_CONFIG_NAME}-{int(time.time())}"
 
-    sm_client.create_model(
+    sm.create_model(
         ModelName=new_model_name,
-        PrimaryContainer={"Image": container, "ModelDataUrl": xgb.model_data},
+        PrimaryContainer={"Image": container, "ModelDataUrl": model_data},
         ExecutionRoleArn=role_arn,
     )
 
-    sm_client.create_endpoint_config(
+    sm.create_endpoint_config(
         EndpointConfigName=new_epc_name,
         ProductionVariants=[{
             "VariantName": "primary",
@@ -112,13 +150,13 @@ def retrain(data_path=None):
         }],
     )
 
-    sm_client.update_endpoint(
+    sm.update_endpoint(
         EndpointName=ENDPOINT_NAME,
         EndpointConfigName=new_epc_name,
     )
     print(f"✓ Endpoint updating with new model...")
 
-    waiter = sm_client.get_waiter("endpoint_in_service")
+    waiter = sm.get_waiter("endpoint_in_service")
     waiter.wait(EndpointName=ENDPOINT_NAME)
     print(f"✓ Endpoint updated and LIVE!")
 

@@ -5,7 +5,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SCRIPT_DIR"
+source "$ROOT_DIR/.venv/bin/activate" 2>/dev/null || true
+unset REQUESTS_CA_BUNDLE SSL_CERT_FILE 2>/dev/null || true
 
 echo "════════════════════════════════════════════════════════"
 echo "  ⚠️  NUKE — Deleting ALL AWS resources"
@@ -24,7 +27,7 @@ if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
 fi
 
 echo ""
-python cleanup.py
+python3 cleanup.py
 
 echo ""
 echo "Verifying no endpoints remain..."

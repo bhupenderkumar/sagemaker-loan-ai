@@ -13,23 +13,23 @@ COSTS:
   ml.m5.large ≈ $0.13/hour ≈ $3.12/day ≈ $94/month
   ⚠️  ALWAYS run cleanup.py when done testing!
 """
-import sagemaker
-from sagemaker import image_uris
 from config import (
-    get_session, ensure_role, REGION, BUCKET_NAME, S3_PREFIX,
+    get_session, ensure_role, REGION,
     MODEL_NAME, ENDPOINT_CONFIG_NAME, ENDPOINT_NAME,
-    INSTANCE_TYPE_DEPLOY, S3_OUTPUT_PATH,
+    INSTANCE_TYPE_DEPLOY,
 )
+
+# Same image as training
+XGBOOST_IMAGE = f"720646828776.dkr.ecr.{REGION}.amazonaws.com/sagemaker-xgboost:1.7-1"
 
 
 def deploy():
     session = get_session()
     role_arn = ensure_role(session)
-    sm_session = sagemaker.Session(boto_session=session)
-    sm_client = session.client("sagemaker")
+    sm = session.client("sagemaker")
 
     # ── Find the latest training job ──────────────────────────
-    jobs = sm_client.list_training_jobs(
+    jobs = sm.list_training_jobs(
         NameContains="loan-xgboost",
         SortBy="CreationTime",
         SortOrder="Descending",
@@ -40,18 +40,18 @@ def deploy():
         return
 
     job_name = jobs["TrainingJobSummaries"][0]["TrainingJobName"]
-    job_info = sm_client.describe_training_job(TrainingJobName=job_name)
+    job_info = sm.describe_training_job(TrainingJobName=job_name)
     model_data = job_info["ModelArtifacts"]["S3ModelArtifacts"]
     print(f"Using model from job: {job_name}")
     print(f"Model artifact: {model_data}")
 
-    container = image_uris.retrieve("xgboost", REGION, version="1.7-1")
+    container = XGBOOST_IMAGE
 
     # ── Delete old resources if they exist ────────────────────
     for name, delete_fn in [
-        (ENDPOINT_NAME, lambda: sm_client.delete_endpoint(EndpointName=ENDPOINT_NAME)),
-        (ENDPOINT_CONFIG_NAME, lambda: sm_client.delete_endpoint_config(EndpointConfigName=ENDPOINT_CONFIG_NAME)),
-        (MODEL_NAME, lambda: sm_client.delete_model(ModelName=MODEL_NAME)),
+        (ENDPOINT_NAME, lambda: sm.delete_endpoint(EndpointName=ENDPOINT_NAME)),
+        (ENDPOINT_CONFIG_NAME, lambda: sm.delete_endpoint_config(EndpointConfigName=ENDPOINT_CONFIG_NAME)),
+        (MODEL_NAME, lambda: sm.delete_model(ModelName=MODEL_NAME)),
     ]:
         try:
             delete_fn()
@@ -60,7 +60,7 @@ def deploy():
             pass
 
     # ── Create Model ──────────────────────────────────────────
-    sm_client.create_model(
+    sm.create_model(
         ModelName=MODEL_NAME,
         PrimaryContainer={
             "Image": container,
@@ -71,7 +71,7 @@ def deploy():
     print(f"✓ Model created: {MODEL_NAME}")
 
     # ── Create Endpoint Config ────────────────────────────────
-    sm_client.create_endpoint_config(
+    sm.create_endpoint_config(
         EndpointConfigName=ENDPOINT_CONFIG_NAME,
         ProductionVariants=[{
             "VariantName": "primary",
@@ -83,7 +83,7 @@ def deploy():
     print(f"✓ Endpoint config created: {ENDPOINT_CONFIG_NAME}")
 
     # ── Create Endpoint ───────────────────────────────────────
-    sm_client.create_endpoint(
+    sm.create_endpoint(
         EndpointName=ENDPOINT_NAME,
         EndpointConfigName=ENDPOINT_CONFIG_NAME,
     )
@@ -91,7 +91,7 @@ def deploy():
     print("  This takes 5-8 minutes...")
 
     # Wait for endpoint to be InService
-    waiter = sm_client.get_waiter("endpoint_in_service")
+    waiter = sm.get_waiter("endpoint_in_service")
     waiter.wait(EndpointName=ENDPOINT_NAME)
     print(f"\n✓ Endpoint is LIVE: {ENDPOINT_NAME}")
     print(f"\nNext step: python predict.py")
